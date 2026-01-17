@@ -103,5 +103,5 @@ Understanding that "committing a log" is not the same as "applying to the state 
 Feel free to reach out if you want to discuss Distributed Systems, Go, or Infrastructure engineering!
 
 **Ruize Liu**
-* Email: [Your Email]
-* LinkedIn: [Your LinkedIn Link]
+* Email:  ruizeliu.heu@gmail.com
+* LinkedIn: https://www.linkedin.com/in/ruize-liu/
