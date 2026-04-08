@@ -6,7 +6,7 @@
 
 ## 📖 Overview
 
-This repository documents my journey and engineering implementation of the **MIT 6.824 Distributed Systems** course labs. The primary goal was to build a fault-tolerant, linearizable, and highly available distributed system from scratch using **Go**.
+This repository documents my journey and engineering implementation of the MIT 6.824 Distributed Systems labs, completed as part of the Distributed Systems course at the University of Gothenburg/Chalmers. The primary goal was to build a fault-tolerant, linearizable, and highly available distributed system from scratch using **Go**.
 
 The implementation covers the core building blocks of modern cloud infrastructure:
 1.  **MapReduce:** Distributed data processing.
