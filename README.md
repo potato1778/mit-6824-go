@@ -74,7 +74,6 @@ The system was rigorously tested using the course's provided test suite, which s
     * Passed `TestSpeed` requirements (committing operations within latency limits).
     * Passed `TestUnreliable` (network packet loss/reordering).
 
-*(Optional: Insert a screenshot of your terminal showing "PASS" results here)*
 ---
 
 ## 💡 Key Challenges & Learnings
