@@ -1,106 +1,142 @@
-# 🚀 MIT 6.824: Distributed Systems Implementation in Go
+# MIT 6.824: Distributed Systems Implementation in Go
 
 ![Go](https://img.shields.io/badge/Language-Go-00ADD8?style=for-the-badge&logo=go)
-![Build](https://img.shields.io/badge/Build-Passing-success?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
-## 📖 Overview
+## Overview
 
-This repository documents my journey and engineering implementation of the MIT 6.824 Distributed Systems labs, completed as part of the Distributed Systems course at the University of Gothenburg/Chalmers. The primary goal was to build a fault-tolerant, linearizable, and highly available distributed system from scratch using **Go**.
+This repository documents my engineering implementation of the MIT 6.824 Distributed Systems labs, completed as part of the Distributed Systems course at the University of Gothenburg/Chalmers. The goal was to build a fault-tolerant, linearizable, and highly available distributed system using **Go**.
 
-The implementation covers the core building blocks of modern cloud infrastructure:
-1.  **MapReduce:** Distributed data processing.
-2.  **Raft:** Consensus algorithm for replicated state machines.
-3.  **KV Service:** A fault-tolerant Key-Value store built on top of Raft.
+The implementation covers three core building blocks of modern cloud infrastructure:
+1. **MapReduce** — Distributed data processing framework
+2. **Raft** — Consensus algorithm for replicated state machines
+3. **KV Service** — A fault-tolerant Key-Value store built on top of Raft
+
+**What I built vs. what I relied on:**
+- Raft protocol logic, leader election, log replication, and snapshotting: implemented myself
+- RPC layer: Go standard library (`net/rpc`)
+- Serialization: Go standard library (`encoding/gob`)
+- Concurrency primitives: Go standard library (`sync.Mutex`, `sync.Cond`)
+- Test harness: provided by the MIT 6.824 course staff
 
 > ⚠️ **Academic Integrity Note:**
-> To adhere to MIT's collaboration policy, **the source code is kept in a private repository**. This repository serves as a showcase of the architecture design, implementation details, and learning notes. I am happy to walk through the code logic and demonstrate the system during an interview.
+> To adhere to MIT's collaboration policy, the source code is kept in a private repository. This repository serves as a showcase of architecture design, implementation details, and learning notes. I am happy to walk through the code logic and demonstrate the system during an interview.
 
 ---
 
-## 🛠️ Project Breakdown
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────┐
+│                   Client                        │
+│         (Put / Append / Get RPCs)               │
+└───────────────────┬─────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────────┐
+│              KV Service Layer                   │
+│   (Duplicate detection, snapshot management)    │
+└───────────────────┬─────────────────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                        Raft Cluster                              │
+│                                                                  │
+│   ┌─────────┐      ┌─────────┐      ┌─────────┐                 │
+│   │ Peer 0  │◄────►│ Peer 1  │◄────►│ Peer 2  │                 │
+│   │(Leader) │      │(Follow.)│      │(Follow.)│                 │
+│   └─────────┘      └─────────┘      └─────────┘                 │
+│                                                                  │
+│   Each peer: Log + Persistent State + State Machine              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Request flow:** Client → KV Leader → Raft log replication across peers → Applied to KV state machine → Response to client
+
+---
+
+## Project Breakdown
 
 ### 1. MapReduce Framework (Lab 1)
-Implemented a distributed MapReduce library consisting of a **Coordinator (Master)** and multiple **Workers**.
+Implemented a distributed MapReduce library with a **Coordinator** and multiple **Workers**.
 
-#### Key Features:
-* **Dynamic Task Scheduling:** The Coordinator assigns Map/Reduce tasks to idle workers and tracks task status (Idle, In-Progress, Completed).
-* **Fault Tolerance:** Handled worker failures using a **heartbeat mechanism**. If a worker doesn't report back within 10 seconds, the task is re-assigned to another worker.
-* **Straggler Handling:** Implemented logic to handle "slow" workers by speculatively re-running slow tasks.
-* **Atomicity:** Used temporary files and atomic renaming (`os.Rename`) to ensure that partial writes from crashed workers do not corrupt the final output.
+**Key Features:**
+- **Dynamic Task Scheduling:** The Coordinator assigns Map/Reduce tasks to idle workers and tracks task status (Idle, In-Progress, Completed).
+- **Fault Tolerance:** Handled worker failures using a heartbeat mechanism. If a worker doesn't report back within 10 seconds, the task is re-assigned.
+- **Straggler Handling:** Speculatively re-runs slow tasks to avoid long-tail latency.
+- **Atomicity:** Used temporary files and atomic renaming (`os.Rename`) to ensure partial writes from crashed workers do not corrupt the final output.
 
 ---
 
 ### 2. Raft Consensus Algorithm (Lab 2) ⭐ *Core Project*
-Implemented the Raft consensus protocol as described in the [extended Raft paper](https://raft.github.io/raft.pdf). This serves as the foundation for the fault-tolerant KV store.
+Implemented the Raft consensus protocol as described in the [extended Raft paper](https://raft.github.io/raft.pdf).
 
-#### 🏗️ Architecture Design
-* **Leader Election:**
-    * Implemented randomized election timeouts (e.g., 300-600ms) to prevent split votes.
-    * Used `time.Ticker` for heartbeat generation and election triggers.
-* **Log Replication:**
-    * Designed the `AppendEntries` RPC to handle log consistency checks.
-    * Implemented an optimized "back-off" strategy: when a conflict occurs, the follower returns the conflict term and index, allowing the leader to skip multiple conflicting entries in one RPC (instead of one by one).
-* **Persistence:**
-    * Used `gob` to serialize state (`currentTerm`, `votedFor`, `log`) to stable storage to survive server crashes.
+**Architecture Design:**
+- **Leader Election:** Randomized election timeouts (300–600ms) to prevent split votes. Used `time.Ticker` for heartbeat generation and election triggers.
+- **Log Replication:** `AppendEntries` RPC with an optimized conflict back-off strategy — on conflict, the follower returns the conflict term and index, allowing the leader to skip multiple entries per RPC instead of one at a time.
+- **Persistence:** `gob` serialization of `currentTerm`, `votedFor`, and `log` to stable storage to survive crashes.
 
-#### 🧩 Technical Highlights (Go Concurrency)
-* **Locking Granularity:** Used `sync.Mutex` extensively to protect shared state. Learned to avoid holding locks during blocking I/O (RPC calls) to prevent deadlocks.
-* **Event Loop:** Each Raft peer runs a main event loop that handles incoming RPCs, applies committed entries to the state machine, and manages timers.
+**Go Concurrency Design:**
+- **Locking Granularity:** `sync.Mutex` protects shared state. Locks are always released before blocking RPC calls to prevent deadlocks.
+- **Event Loop:** Each Raft peer runs a single main event loop handling incoming RPCs, timer management, and log application — keeping state transitions predictable.
 
 ---
 
 ### 3. Fault-Tolerant Key-Value Store (Lab 3)
-Built a linearizable KV storage service on top of the Raft layer.
+A linearizable KV storage service built on top of the Raft layer.
 
-#### Key Features:
-* **Client Request Handling:** Clients send `Put`, `Append`, and `Get` RPCs to the Leader. If the Leader crashes, the client retries until a new Leader is found.
-* **Duplicate Detection (Idempotency):**
-    * **Challenge:** If a leader commits a log but crashes before replying, the client will retry. This could lead to applying the same operation twice.
-    * **Solution:** Each client has a unique `ClientId` and a monotonically increasing `RequestId`. The state machine tracks the last executed request for each client to filter duplicates.
-* **Snapshotting (Log Compaction):**
-    * To prevent the Raft log from growing infinitely, the service creates snapshots of the KV map when the log size exceeds a threshold.
-    * Implemented `InstallSnapshot` RPC to send snapshots to lagging followers who have fallen too far behind the leader's log.
+**Key Features:**
+- **Client Request Handling:** Clients send `Put`, `Append`, and `Get` RPCs to the Leader. On Leader failure, clients retry until a new Leader is elected.
+- **Duplicate Detection (Idempotency):** Each client carries a unique `ClientId` and monotonically increasing `RequestId`. The state machine tracks the last executed request per client to filter duplicates — handling the case where a leader commits a log entry but crashes before replying.
+- **Snapshotting (Log Compaction):** The service snapshots the KV map when the Raft log exceeds a size threshold. Implemented `InstallSnapshot` RPC to bring lagging followers up to date.
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & Verification
 
-The system was rigorously tested using the course's provided test suite, which simulates harsh network conditions.
+Tested using the MIT 6.824 test suite, which simulates harsh network conditions:
 
-* **Chaos Testing:** Tests involve disconnecting nodes, partitioning the network, and crashing leaders randomly.
-* **Race Detection:** All tests passed with the Go race detector enabled (`go test -race`).
-* **Performance:**
-    * Passed `TestSpeed` requirements (committing operations within latency limits).
-    * Passed `TestUnreliable` (network packet loss/reordering).
+- **Chaos Testing:** Disconnecting nodes, network partitions, crashing leaders at random.
+- **Race Detection:** All tests passed with `go test -race`.
+- **Performance:** Passed `TestSpeed` (latency bounds) and `TestUnreliable` (packet loss and reordering).
 
 ---
 
-## 💡 Key Challenges & Learnings
+## Key Challenges & Learnings
 
-### 1. The "Split Vote" Deadlock
-Initially, my Raft implementation struggled with liveness during network partitions. Nodes would endlessly split votes.
-* **Fix:** I refined the randomized election timeout range. By spreading out the timeouts, one node is statistically guaranteed to time out first and win the election.
+### 1. Split Vote Liveness
+Early on, nodes would endlessly split votes during network partitions, causing liveness failures.
 
-### 2. Deadlocks with Channels vs. Mutexes
-I initially tried to manage state using Go channels exclusively, but it led to complex circular dependencies.
-* **Refactor:** I switched to a shared-memory design using `sync.Mutex` for state protection and `sync.Cond` for signaling state changes (like `commitIndex` updates), which simplified the logic significantly.
+**Fix:** Widened and randomized the election timeout range so one node is statistically guaranteed to time out first. This eliminated the split vote loops without any changes to the core election logic.
 
-### 3. Linearizability
-Understanding that "committing a log" is not the same as "applying to the state machine" was crucial. The response to the client must only be sent after the entry is **applied** to the KV map, not just when Raft commits it.
+### 2. Channels vs. Mutexes — A Design Pivot
 
----
+I initially modelled inter-goroutine communication using Go channels, which felt idiomatic. However, as the number of goroutines grew (one per peer, one for log application, one for snapshotting), I ran into circular dependencies where goroutines would block waiting on each other's channels, causing deadlocks that were difficult to reason about.
 
-## 📚 References
-* [In Search of an Understandable Consensus Algorithm (Extended Version)](https://raft.github.io/raft.pdf)
-* [MIT 6.824 Schedule & Materials](https://pdos.csail.mit.edu/6.824/)
-* [A Tour of Go](https://tour.golang.org/)
+**Refactor:** Switched to shared-memory design using `sync.Mutex` for state protection and `sync.Cond` for signalling state changes (e.g., when `commitIndex` advances). The trade-off: this approach is less "Go-idiomatic" in style but makes state transitions much easier to reason about formally — which matters a lot for a correctness-critical algorithm like Raft. There's likely a performance ceiling compared to a well-designed channel-based model, but for this implementation, correctness was the priority.
+
+### 3. Commit vs. Apply — Linearizability
+A subtle but critical correctness requirement: the response to a client must only be sent after a log entry is **applied to the state machine**, not just when Raft marks it as committed. Getting this ordering wrong breaks linearizability even when Raft itself is correct.
 
 ---
 
-### 📫 Contact
-Feel free to reach out if you want to discuss Distributed Systems, Go, or Infrastructure engineering!
+## What I'd Do Differently
+
+If I were starting over today, I would define the interface boundaries between the Raft core and the KV state machine layer upfront, before writing any implementation code. I underestimated how tightly coupled those two layers would become and ended up doing a significant refactor mid-way through when I hit abstraction issues. Clear interfaces from day one would have made the snapshotting and log compaction work much cleaner to integrate.
+
+---
+
+## References
+- [In Search of an Understandable Consensus Algorithm (Extended Version)](https://raft.github.io/raft.pdf)
+- [MIT 6.824 Schedule & Materials](https://pdos.csail.mit.edu/6.824/)
+- [A Tour of Go](https://tour.golang.org/)
+
+---
+
+## Contact
+
+Feel free to reach out to discuss Distributed Systems, Go, or Infrastructure engineering.
 
 **Ruize Liu**
-* Email:  ruizeliu.heu@gmail.com
-* LinkedIn: https://www.linkedin.com/in/ruize-liu/
+- Email: ruizeliu.heu@gmail.com
+- LinkedIn: https://www.linkedin.com/in/ruize-liu/
