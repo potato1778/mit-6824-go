@@ -42,10 +42,10 @@ The implementation covers three core building blocks of modern cloud infrastruct
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Raft Cluster                              │
 │                                                                  │
-│   ┌─────────┐      ┌─────────┐      ┌─────────┐                 │
-│   │ Peer 0  │◄────►│ Peer 1  │◄────►│ Peer 2  │                 │
-│   │(Leader) │      │(Follow.)│      │(Follow.)│                 │
-│   └─────────┘      └─────────┘      └─────────┘                 │
+│   ┌─────────┐      ┌─────────┐      ┌─────────┐                  │
+│   │ Peer 0  │◄────►│ Peer 1  │◄────►│ Peer 2  │                  │
+│   │(Leader) │      │(Follow.)│      │(Follow.)│                  │
+│   └─────────┘      └─────────┘      └─────────┘                  │
 │                                                                  │
 │   Each peer: Log + Persistent State + State Machine              │
 └──────────────────────────────────────────────────────────────────┘
